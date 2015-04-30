@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset=utf-8 />
+    <title>KY</title>
+    <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+
+    <script src="https://code.jquery.com/jquery-1.11.2.min.js"></script>
+    <script src="http://cdn.leafletjs.com/leaflet-0.7.3/leaflet.js"></script>
+    <script src="simple_statistics.js"></script>
+
+    <link rel="stylesheet" href="http://cdn.leafletjs.com/leaflet-0.7.3/leaflet.css" />
+    <link href='http://fonts.googleapis.com/css?family=Lato' rel='stylesheet' type='text/css'>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: whitesmoke;
+            font-family: Lato, sans-serif;
+            color: #0D0000;
+        }
+        header {
+            padding: 6px 10%;
+        }
+        h1 {
+            position: absolute;
+            z-index: 100;
+            top:20px;
+            left: 65px;
+            padding: 8px 15px;
+            margin: 0;
+            color: whitesmoke;
+            fontsize: 2em;
+            background:rgba(25,25,25,0.8);
+            border-radius:5px;
+        }
+        h2 {
+            display: inline-block;
+            color: #001323;
+        }
+        #map {
+            position:  absolute;
+            width: 100%;
+            top: 0;
+            bottom: 0;
+        }
+        footer {
+            padding: 6px 10%;
+            width: 80%;
+        }
+        p {
+            font-size: 1em;
+            color: #001323;
+            
+        }
+        .legend {
+            padding: 3px 3px;
+            font-size: 1em;
+            color: whitesmoke;
+            background:rgba(25,25,25,0.8);
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            border-radius: 10px;
+            width: 300px;
+        }
+        .legend h3 {
+            font-size: 1.1em;
+            font-weight: bold;
+            line-height: 1em;
+            color: whitesmoke;
+            margin: 0;
+        }
+        .legend li {
+            list-style-type: none;
+            display: inline;
+            height: 20px;
+        }
+        .legend span {
+            width: 60px;
+            height: 20px;
+            float: left;
+            //margin-right: 10px;
+        }
+        #ui-controls  {
+            
+            position: absolute;
+            bottom: 80px;
+            right: 10px;
+            z-index: 100;
+            float:left;
+            padding: 3px 3px;
+            margin: 1px;
+            color: whitesmoke;
+            fontsize: 2em;
+            background:rgba(25,25,25,0.8);
+            border-radius:5px;
+        }
+        label {
+            font-size: 1.1em;
+            font-weight: bold;
+        }
+        .info {
+            padding: 6px 20px;
+            font-size: 1em;
+            background: rgba(255,255,255,0.8);
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            border-radius: 5px;
+            text-align: right;   
+        }
+        .info h3 {
+            margin: 0;   
+        }
+        .leaflet-popup-content {
+            max-width: 120px;   
+        }
+        
+        
+    </style>
+</head>
+
+<body>
+    
+    <header>
+        <h1>All Things Kentucky</h1>
+        <h2></h2>
+    </header>
+    <div id='ui-controls'>
+     <label>Choose a data attribute:<br>
+        <select name="bourbon">
+            <option value="bourbon" selected>tweets containing "bourbon"</option>
+            <option value="kentucky">tweets containing "Kentucky"</option> 
+            <option value="bluegrass">tweets containing "bluegrass"</option>
+            <option value="derby"> tweets containing "Kentucky derby"</option>
+            <option value="chicken"> tweets containing "Kentucky Fried Chicken"</option>
+            <option value="bbn"> tweets containing "bbn"</option>
+            
+            
+        </select>
+        </label>
+    </div>
+    <div id='map'></div>
+        
+    <script>
+        
+        
+        // initial map options, disabling pan/zoom
+       var options = {
+            center: [38.2, -88],
+            zoom: 5,
+            minZoom: 4,
+            maxZoom: 6,
+            dragging: true,
+            zoomControl: true
+        }
+        var map = L.map('map', options);
+        
+    var tiles = L.tileLayer('http://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+	attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+	maxZoom: 16
+});
+
+        // load map tiles and add to map
+        map.addLayer(tiles); 
+        
+        // set global variables for map layer, 
+        // mapped attribute, and normalizing attribute
+        var dataLayer,
+            attribute = "bourbon",
+            norm = "norm";
+        
+        // create object to hold legend titles
+        var labels = {
+            "bourbon": "bourbon",
+            "kentucky": "kentucky",
+            "bluegrass": "bluegrass",
+            "hilbill": "hillbilly",
+            "derby": "Kentucky Derby",
+            "chicken": "Kentucky Fried Chicken",
+            "bbn": "bbn"
+        }
+        
+        // AJAX call to load hexbin-level data
+        $.getJSON("hexKY.json", function(data) {
+            
+            // create Leaflet data layer and add to map
+            dataLayer = L.geoJson(data, {
+                 style: function(feature) {
+                    // style hex with initial default path options
+                    //draws and styles the polygons 
+                    return {
+                            fillColor: 'white',
+                            weight: 0,
+                            fillOpacity: 0.5,
+                            
+                        };
+                }          
+            }).addTo(map);
+      
+           
+            drawLegend(); // draw the legend
+           // draw the map
+            ui();
+            drawInfo(); // draw the info panel
+             
+             drawMap(); 
+            
+        });
+        
+        function drawMap() {
+             
+         
+                // get the class breaks for the initial data attribute
+                var breaks = getClassBreaks();
+
+                // loop through each polygon
+                dataLayer.eachLayer(function(layer) {
+             
+                // if the data attribute is not 0
+                if(layer.feature.properties[attribute] != 0) {
+                    // set the layer fill and stroke to true and colorize
+                    layer.setStyle({
+                        fill: true,
+                        stroke: true,
+                        fillColor: getColor(layer.feature.properties[attribute]/
+                                        layer.feature.properties[norm], breaks)  
+                        }) ;
+                } else {
+                    // otherwise, set fill and stroke to false
+                    layer.setStyle({
+                        fill: false,
+                        stroke: false
+                    });
+                }
+                    
+                // bind a popup to layer with county-specific information
+                //console.log(props)
+                layer.bindPopup(labels[attribute] + " : " + ((layer.feature.properties[attribute])).toLocaleString());
+
+                // on mousing over layer
+                layer.on('mouseover', function() {
+                    
+                // update the info panel
+                updateInfo(this); 
+                
+                // change the stroke color and bring that element to the front
+                layer.setStyle({color: 'blue'}).bringToFront();  
+                });
+                
+                // on mousing off layer
+                layer.on('mouseout', function() {
+                    
+                // reset the layer style to its original stroke color
+                layer.setStyle({color: '#ffffb2', });
+                });
+                
+            });  
+            
+            // when mousing over the map
+            dataLayer.on('mouseover', function() {
+                $(".info").show(); // display the info panel
+            });
+            
+            // when mousing off the map
+            dataLayer.on('mouseout', function() {
+                $(".info").hide();  // hide the info panel 
+            });
+            
+            // update the legend with the current data attribute information
+            updateLegend(breaks);
+            
+        }
+        
+        function getClassBreaks() {
+          
+            
+            // create empty Array for storing values
+            var values = [];
+            
+            // loop through all the counties
+            dataLayer.eachLayer(function(layer) {
+                props = layer.feature.properties
+                //console.log(props);
+                if(props[norm] == 0) props[norm] = 1
+            
+                var value = layer.feature.properties[attribute]/layer.feature.properties[norm];
+                values.push(+value);   // push the normalized value for each layer into the Array
+                 //console.log(values)
+                 
+            }); 
+            
+            var breaks = ss.jenks(values, 5);  // determine the class breaks
+            return breaks;  // return Array of class breaks
+           
+            
+        }   
+        
+        function getColor(d, breaks) {
+             
+            // function accepts a single normalized data attribute value 
+            // and uses a series of conditional statements to determine which 
+            // which color value to return to return to the function caller
+//            if(d == 0) {return hideStyle};
+//            console.log(d);
+//           
+//            var hideStyle ={
+//                fillColor: false,
+//                stroke:false,
+//                fillOpacity: false,
+         
+                if(d <= breaks[1]) {
+                return '#ffffb2';
+            } else if(d <= breaks[2]) {
+                return '#fecc5c';
+            } else if(d <= breaks[3]) {
+                return '#fd8d3c';
+            } else if(d <= breaks[4]) {
+                return '#f03b20'
+            } else if(d <= breaks[5]) {
+                return '#bd0026'
+            }
+        }
+        
+        function drawLegend() {
+            
+            // create a new Leaflet control object, and position it top left
+            var legend = L.control({position: 'bottomright'});
+            
+            // when the legend is added to the map
+            legend.onAdd = function(map) {
+                
+            // create a div element with an class attribute of legend
+            var div = L.DomUtil.create('div', 'legend');
+                
+            // return the div to the method
+            return div;
+        
+            };
+            
+            // add the empty legend div to the map
+            legend.addTo(map);
+        }
+        
+        function updateLegend(breaks) {
+            
+            // select the legend, add a title, begin an unordered list and assign to a variable
+            var legend = $('.legend').html("<h3>" + "a few tweets"+ "----------------------------------lots of tweets" + "</h3><ul>"); 
+
+            // loop through the Array of classification break values
+            for (var i = 0; i < breaks.length-1; i++) {
+                
+                // get a color value for each
+                var color = getColor(breaks[i + 1], breaks);
+                
+                // append a list item to the legend
+                legend.append('<li><span style="background:' + color + '"></span> ' + '</li>');
+            }
+            
+            // close the legend's unordered list
+            legend.append("</ul>");
+        }
+        
+
+        
+        function ui() {
+         
+            // create a new Leaflet control Object and assign to a variable
+            var dataView = L.control({position: 'bottomright'});
+            
+            // when the control is added to the map
+            dataView.onAdd = function(map) {
+                
+                // select an existing DOM element with id of 'ui-controls'
+                var controls = L.DomUtil.get('ui-controls');
+                
+                // return that element to the method
+                return controls;
+            }
+            
+            // add the control to the map
+            dataView.addTo(map);
+         
+            // select the dropdown element and listen for a change
+            $('select[name="bourbon"]').change(function() {
+                
+                // re-assign the value based off user's selection
+                attribute = $(this).val();
+                
+                // update the map
+                drawMap();
+                
+            });
+        }
+        
+        function drawInfo() {
+            
+            // create a new Leaflet control object and position top right
+            var info = L.control({position: 'topright'});
+            
+            // when adding control to map
+            info.onAdd = function(map) {
+                
+                // create a new div with class of info
+                var div = L.DomUtil.create('div', 'info');
+                
+                // return div to control object
+                return div;  
+                
+            }
+            
+            // add the empty info div to the map
+            info.addTo(map);
+            
+            // select the info panel and hide it
+            $(".info").hide();
+        }
+        
+        function updateInfo(layer) {
+            
+            // create shortcut for accessing properties
+            var props = layer.feature.properties;
+            
+            // build an HTML string of relevant information about that polygon
+            var html = 
+                        "# of bourbon tweets: <b>"+ props["bourbon"]+"</b><br>"+
+                        "# of kentucky tweets: <b>"+ props["kentucky"]+"</b><br>"+
+                        "# of bluegrass  tweets: <b>"+ props["bluegrass"]+"</b><br>"+
+                        "# of hillbilly tweets: <b>"+ props["hillbill"]+"</b><br>"+
+                        "# of Kentucky derby tweets: <b>"+ props["derby"]+"</b><br>"+
+                        "# of kentucky fried chicken tweets: <b>"+ props["chicken"]+"</b><br>"+
+                        "# of bbn tweets: <b>"+ props["bbn"]+"</b><br>"+
+                        "# of kentucky colonel tweets: <b>"+ props["colonel"]+"</b>"
+            
+            // insert HTML content into empty info panel
+            $(".info").html(html);
+        }
+
+    </script>
+    
+</body>
+
+</html>
